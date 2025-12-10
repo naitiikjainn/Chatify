@@ -8,7 +8,9 @@ import {
   Typography,
   Avatar,
 } from "@mui/material";
+import { Routes, Route } from "react-router-dom";
 import Rooms from "./Components/Rooms";
+import Chat from "./Components/Chat";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -48,7 +50,7 @@ function App() {
 
   return (
     <Container style={{ marginTop: 30 }}>
-      {/* Top bar with user info */}
+      {/* Top bar */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Avatar src={user.photoURL} />
         <div>
@@ -65,7 +67,7 @@ function App() {
         </Button>
       </div>
 
-      {/* Main layout: left = rooms, right = placeholder */}
+      {/* Layout */}
       <div
         style={{
           display: "flex",
@@ -79,9 +81,17 @@ function App() {
         </div>
 
         <div style={{ flex: 1 }}>
-          <Typography variant="h6">
-            Select a channel from the left or create a new one.
-          </Typography>
+          <Routes>
+            <Route
+              path="/"
+              element={
+                <Typography>
+                  Select a channel from the left or create a new one.
+                </Typography>
+              }
+            />
+            <Route path="/channel/:channelId" element={<Chat user={user} />} />
+          </Routes>
         </div>
       </div>
     </Container>
