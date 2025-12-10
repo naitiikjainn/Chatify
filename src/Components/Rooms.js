@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   List,
   ListItem,
+  ListItemButton,
   ListItemIcon,
   ListItemText,
   Collapse,
@@ -9,6 +10,8 @@ import {
   Divider,
   Snackbar,
   Fade,
+  Box,
+  Typography,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ExpandLess from "@mui/icons-material/ExpandLess";
@@ -25,14 +28,19 @@ import {
   addDoc,
 } from "firebase/firestore";
 import CreateRoom from "./CreateRoom";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 
 function Rooms() {
   const [open, setOpen] = useState(true);
   const [channelList, setChannelList] = useState([]);
   const [showCreateRoom, setShowCreateRoom] = useState(false);
   const [alert, setAlert] = useState(false);
-  const navigate = useNavigate(); // ✅ proper init
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const currentChannelId = location.pathname.startsWith("/channel/")
+    ? location.pathname.split("/")[2]
+    : null;
 
   useEffect(() => {
     const q = query(collection(db, "channels"), orderBy("channelName", "asc"));
@@ -57,7 +65,6 @@ function Rooms() {
   };
 
   const goToChannel = (id) => {
-    // ✅ channel pe click → route change
     navigate(`/channel/${id}`);
   };
 
@@ -78,7 +85,6 @@ function Rooms() {
       return;
     }
 
-    // duplicate check
     for (let i = 0; i < channelList.length; i++) {
       if (cName === channelList[i].channelName) {
         handleAlert();
@@ -90,14 +96,13 @@ function Rooms() {
       await addDoc(collection(db, "channels"), {
         channelName: cName,
       });
-      console.log("added new channel");
     } catch (err) {
       console.log(err);
     }
   };
 
   return (
-    <div>
+    <Box sx={{ color: "#dcddde" }}>
       <Snackbar
         anchorOrigin={{ vertical: "top", horizontal: "center" }}
         open={alert}
@@ -116,63 +121,103 @@ function Rooms() {
         <CreateRoom create={addChannel} manage={manageCreateRoomModal} />
       )}
 
+      {/* Server / app title */}
+      <Box
+        sx={{
+          px: 2,
+          py: 1.5,
+          borderBottom: "1px solid #202225",
+          backgroundColor: "#2f3136",
+        }}
+      >
+        <Typography sx={{ fontWeight: 700 }}>Chatify Server</Typography>
+        <Typography variant="caption" sx={{ color: "#b9bbbe" }}>
+          Channels
+        </Typography>
+      </Box>
+
       {/* Create channel row */}
-      <ListItem sx={{ paddingTop: 0, paddingBottom: 0 }}>
-        <ListItemText primary="Create New Channel" />
+      <ListItem sx={{ paddingTop: 0.5, paddingBottom: 0.5 }}>
+        <ListItemText
+          primary="Create New Channel"
+          primaryTypographyProps={{ sx: { fontSize: 14, color: "#b9bbbe" } }}
+        />
         <IconButton edge="end" aria-label="add" onClick={manageCreateRoomModal}>
-          <AddIcon sx={{ color: "#cb43fc" }} />
+          <AddIcon sx={{ color: "#5865f2" }} />
         </IconButton>
       </ListItem>
-      <Divider />
+      <Divider sx={{ borderColor: "#202225" }} />
 
       {/* Channels header */}
       <List component="nav" aria-labelledby="nested-list-subheader">
-        <ListItem button onClick={handleClick}>
-          <ListItemIcon>
+        <ListItemButton onClick={handleClick}>
+          <ListItemIcon sx={{ minWidth: 32 }}>
             <IoChatbubbles
-              style={{ fontSize: "1.5em", color: "#cb43fc" }}
+              style={{ fontSize: "1.25em", color: "#5865f2" }}
             />
           </ListItemIcon>
-          <ListItemText primary="CHANNELS" sx={{ color: "#8e9297" }} />
+          <ListItemText
+            primary="TEXT CHANNELS"
+            primaryTypographyProps={{
+              sx: { fontSize: 12, color: "#8e9297", fontWeight: 600 },
+            }}
+          />
           {open ? (
-            <ExpandLess sx={{ color: "#cb43fc" }} />
+            <ExpandLess sx={{ color: "#8e9297" }} />
           ) : (
-            <ExpandMore sx={{ color: "#cb43fc" }} />
+            <ExpandMore sx={{ color: "#8e9297" }} />
           )}
-        </ListItem>
+        </ListItemButton>
 
         {/* Channels list */}
         <Collapse in={open} timeout="auto">
           <List component="div" disablePadding>
-            {channelList.map((channel) => (
-              <ListItem
-                key={channel.id}
-                button
-                sx={{ pl: 4 }}
-                onClick={() => goToChannel(channel.id)} // ✅ yahi main change
-              >
-                <ListItemIcon sx={{ minWidth: "30px" }}>
-                  <BiHash
-                    style={{
-                      fontSize: "1.3em",
-                      color: "#b9bbbe",
+            {channelList.map((channel) => {
+              const isActive = channel.id === currentChannelId;
+
+              return (
+                <ListItemButton
+                  key={channel.id}
+                  sx={{
+                    pl: 4,
+                    py: 0.5,
+                    backgroundColor: isActive ? "#36393f" : "transparent",
+                    borderLeft: isActive
+                      ? "3px solid #5865f2"
+                      : "3px solid transparent",
+                    "&:hover": { backgroundColor: "#393c43" },
+                  }}
+                  onClick={() => goToChannel(channel.id)}
+                >
+                  <ListItemIcon sx={{ minWidth: 26 }}>
+                    <BiHash
+                      style={{
+                        fontSize: "1.2em",
+                        color: isActive ? "#ffffff" : "#8e9297",
+                      }}
+                    />
+                  </ListItemIcon>
+                  <ListItemText
+                    primary={
+                      channel.channelName.length <= 18
+                        ? channel.channelName
+                        : `${channel.channelName.substr(0, 18)}...`
+                    }
+                    primaryTypographyProps={{
+                      sx: {
+                        color: isActive ? "#ffffff" : "#dcddde",
+                        fontSize: 14,
+                        fontWeight: isActive ? 600 : 400,
+                      },
                     }}
                   />
-                </ListItemIcon>
-                <ListItemText
-                  primary={
-                    channel.channelName.length <= 12
-                      ? channel.channelName
-                      : `${channel.channelName.substr(0, 12)}...`
-                  }
-                  sx={{ color: "#dcddde" }}
-                />
-              </ListItem>
-            ))}
+                </ListItemButton>
+              );
+            })}
           </List>
         </Collapse>
       </List>
-    </div>
+    </Box>
   );
 }
 
