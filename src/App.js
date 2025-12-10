@@ -2,7 +2,13 @@
 import React, { useEffect, useState } from "react";
 import { signInWithPopup, onAuthStateChanged, signOut } from "firebase/auth";
 import { auth, provider } from "./Firebase/Firebase";
-import { Button, Container, Typography, Avatar } from "@mui/material";
+import {
+  Button,
+  Container,
+  Typography,
+  Avatar,
+} from "@mui/material";
+import Rooms from "./Components/Rooms";
 
 function App() {
   const [user, setUser] = useState(null);
@@ -42,6 +48,7 @@ function App() {
 
   return (
     <Container style={{ marginTop: 30 }}>
+      {/* Top bar with user info */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
         <Avatar src={user.photoURL} />
         <div>
@@ -58,9 +65,25 @@ function App() {
         </Button>
       </div>
 
-      <Typography style={{ marginTop: 30 }}>
-        ✅ Logged in successfully. Next step: Rooms & Chat UI.
-      </Typography>
+      {/* Main layout: left = rooms, right = placeholder */}
+      <div
+        style={{
+          display: "flex",
+          marginTop: 24,
+          gap: 16,
+          alignItems: "flex-start",
+        }}
+      >
+        <div style={{ width: 280, borderRight: "1px solid #333" }}>
+          <Rooms />
+        </div>
+
+        <div style={{ flex: 1 }}>
+          <Typography variant="h6">
+            Select a channel from the left or create a new one.
+          </Typography>
+        </div>
+      </div>
     </Container>
   );
 }
