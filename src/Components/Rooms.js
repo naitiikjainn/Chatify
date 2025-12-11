@@ -19,6 +19,7 @@ import ExpandMore from "@mui/icons-material/ExpandMore";
 import CloseIcon from "@mui/icons-material/Close";
 import { IoChatbubbles } from "react-icons/io5";
 import { BiHash } from "react-icons/bi";
+import { theme } from "../theme";
 import { db } from "../Firebase/Firebase";
 import {
   collection,
@@ -102,7 +103,7 @@ function Rooms() {
   };
 
   return (
-    <Box sx={{ color: "#dcddde" }}>
+    <Box sx={{ color: theme.textPrimary }}>
       <Snackbar
         anchorOrigin={{ vertical: "top", horizontal: "center" }}
         open={alert}
@@ -126,12 +127,14 @@ function Rooms() {
         sx={{
           px: 2,
           py: 1.5,
-          borderBottom: "1px solid #202225",
-          backgroundColor: "#2f3136",
+          borderBottom: `1px solid ${theme.bgMain}`,
+          backgroundColor: theme.bgSidebar,
         }}
       >
-        <Typography sx={{ fontWeight: 700 }}>Chatify Server</Typography>
-        <Typography variant="caption" sx={{ color: "#b9bbbe" }}>
+        <Typography sx={{ fontWeight: 700, color: theme.textPrimary }}>
+          Chatify Server
+        </Typography>
+        <Typography variant="caption" sx={{ color: theme.textMuted }}>
           Channels
         </Typography>
       </Box>
@@ -140,32 +143,32 @@ function Rooms() {
       <ListItem sx={{ paddingTop: 0.5, paddingBottom: 0.5 }}>
         <ListItemText
           primary="Create New Channel"
-          primaryTypographyProps={{ sx: { fontSize: 14, color: "#b9bbbe" } }}
+          primaryTypographyProps={{
+            sx: { fontSize: 14, color: theme.textMuted },
+          }}
         />
         <IconButton edge="end" aria-label="add" onClick={manageCreateRoomModal}>
-          <AddIcon sx={{ color: "#5865f2" }} />
+          <AddIcon sx={{ color: theme.accent }} />
         </IconButton>
       </ListItem>
-      <Divider sx={{ borderColor: "#202225" }} />
+      <Divider sx={{ borderColor: theme.bgMain }} />
 
       {/* Channels header */}
       <List component="nav" aria-labelledby="nested-list-subheader">
         <ListItemButton onClick={handleClick}>
           <ListItemIcon sx={{ minWidth: 32 }}>
-            <IoChatbubbles
-              style={{ fontSize: "1.25em", color: "#5865f2" }}
-            />
+            <IoChatbubbles style={{ fontSize: "1.25em", color: theme.accent }} />
           </ListItemIcon>
           <ListItemText
             primary="TEXT CHANNELS"
             primaryTypographyProps={{
-              sx: { fontSize: 12, color: "#8e9297", fontWeight: 600 },
+              sx: { fontSize: 12, color: theme.textMuted, fontWeight: 600 },
             }}
           />
           {open ? (
-            <ExpandLess sx={{ color: "#8e9297" }} />
+            <ExpandLess sx={{ color: theme.textMuted }} />
           ) : (
-            <ExpandMore sx={{ color: "#8e9297" }} />
+            <ExpandMore sx={{ color: theme.textMuted }} />
           )}
         </ListItemButton>
 
@@ -180,12 +183,13 @@ function Rooms() {
                   key={channel.id}
                   sx={{
                     pl: 4,
-                    py: 0.5,
-                    backgroundColor: isActive ? "#36393f" : "transparent",
-                    borderLeft: isActive
-                      ? "3px solid #5865f2"
-                      : "3px solid transparent",
-                    "&:hover": { backgroundColor: "#393c43" },
+                    py: 0.8,
+                    borderRadius: 1,
+                    mx: 1,
+                    backgroundColor: isActive ? theme.bgInput : "transparent",
+                    "&:hover": {
+                      backgroundColor: "#30323a",
+                    },
                   }}
                   onClick={() => goToChannel(channel.id)}
                 >
@@ -193,21 +197,16 @@ function Rooms() {
                     <BiHash
                       style={{
                         fontSize: "1.2em",
-                        color: isActive ? "#ffffff" : "#8e9297",
+                        color: isActive ? "#ffffff" : theme.textMuted,
                       }}
                     />
                   </ListItemIcon>
                   <ListItemText
-                    primary={
-                      channel.channelName.length <= 18
-                        ? channel.channelName
-                        : `${channel.channelName.substr(0, 18)}...`
-                    }
+                    primary={channel.channelName}
                     primaryTypographyProps={{
                       sx: {
-                        color: isActive ? "#ffffff" : "#dcddde",
-                        fontSize: 14,
-                        fontWeight: isActive ? 600 : 400,
+                        color: isActive ? theme.textPrimary : theme.textMuted,
+                        fontWeight: isActive ? 500 : 400,
                       },
                     }}
                   />
