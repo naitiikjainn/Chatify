@@ -1,5 +1,5 @@
 // src/Components/Rooms.js
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState } from "react";
 import {
   Box,
   List,
@@ -7,196 +7,295 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
-  Collapse,
-  IconButton,
   Divider,
+  IconButton,
+  Snackbar,
+  Fade,
   Typography,
-  Badge,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  Button,
+  Tooltip,
 } from "@mui/material";
 import AddIcon from "@mui/icons-material/Add";
 import ExpandLess from "@mui/icons-material/ExpandLess";
 import ExpandMore from "@mui/icons-material/ExpandMore";
+import DeleteOutlineIcon from "@mui/icons-material/DeleteOutline";
+import CloseIcon from "@mui/icons-material/Close";
 import { IoChatbubbles } from "react-icons/io5";
 import { BiHash } from "react-icons/bi";
-import { db } from "../Firebase/Firebase";
+import CreateRoom from "./CreateRoom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   collection,
   query,
   orderBy,
   onSnapshot,
+  addDoc,
   doc,
-  where,
+  deleteDoc,
+  getDocs,
+  writeBatch,
 } from "firebase/firestore";
-import CreateRoom from "./CreateRoom";
-import { useNavigate, useLocation } from "react-router-dom";
+import { db } from "../Firebase/Firebase";
 
-function Rooms({ user }) {
-  const [open, setOpen] = useState(true);
-  const [channels, setChannels] = useState([]); // { id, channelName, unread }
-  const [showCreateRoom, setShowCreateRoom] = useState(false);
+function Rooms() {
   const navigate = useNavigate();
   const location = useLocation();
-  const currentChannelId = location.pathname.startsWith("/channel/") ? location.pathname.split("/")[2] : null;
 
-  // store unsub functions for each channel in a map { [channelId]: { unsubLastRead, unsubMsgs } }
-  const listenersRef = useRef({});
+  const [openGroup, setOpenGroup] = useState(true);
+  const [channels, setChannels] = useState([]);
+  const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [alertOpen, setAlertOpen] = useState(false);
 
-  // subscribe to list of channels
+  // delete confirmation dialog
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [channelToDelete, setChannelToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  // current channel id from URL
+  const currentChannelId = location.pathname.startsWith("/channel/")
+    ? location.pathname.split("/")[2]
+    : null;
+
   useEffect(() => {
-    const col = collection(db, "channels");
-    const q = query(col, orderBy("channelName", "asc"));
+    const q = query(collection(db, "channels"), orderBy("channelName", "asc"));
     const unsub = onSnapshot(q, (snap) => {
-      const list = snap.docs.map((d) => ({ id: d.id, channelName: d.data().channelName, unread: 0 }));
+      const list = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
       setChannels(list);
+    }, (err) => {
+      console.error("Channels snapshot error:", err);
+      setChannels([]);
     });
 
-    return () => {
-      unsub();
-      // cleanup any per-channel listeners
-      Object.values(listenersRef.current).forEach((obj) => {
-        try {
-          obj.unsubLastRead && obj.unsubLastRead();
-        } catch {}
-        try {
-          obj.unsubMsgs && obj.unsubMsgs();
-        } catch {}
-      });
-      listenersRef.current = {};
-    };
+    return () => unsub();
   }, []);
 
-  // whenever channels list or user changes, (re)create per-channel listeners safely
-  useEffect(() => {
-    // cleanup old listeners first
-    Object.entries(listenersRef.current).forEach(([channelId, obj]) => {
-      try {
-        obj.unsubLastRead && obj.unsubLastRead();
-      } catch {}
-      try {
-        obj.unsubMsgs && obj.unsubMsgs();
-      } catch {}
-      delete listenersRef.current[channelId];
-    });
+  const toggleGroup = () => setOpenGroup((s) => !s);
+  const toggleCreateRoom = () => setShowCreateRoom((s) => !s);
+  const closeAlert = () => setAlertOpen(false);
 
-    if (!user) {
-      // if no user, reset unread counts
-      setChannels((prev) => prev.map((c) => ({ ...c, unread: 0 })));
+  const goToChannel = (id) => {
+    navigate(`/channel/${id}`);
+  };
+
+  // create channel (called from CreateRoom)
+  const addChannel = async (name) => {
+    if (!name) {
+      setAlertOpen(true);
       return;
     }
+    const cName = name.toLowerCase().trim();
+    if (!cName) {
+      setAlertOpen(true);
+      return;
+    }
+    // check duplicate locally (helps UX)
+    if (channels.some((c) => c.channelName === cName)) {
+      setAlertOpen(true);
+      return;
+    }
+    try {
+      await addDoc(collection(db, "channels"), { channelName: cName });
+      setShowCreateRoom(false);
+    } catch (err) {
+      console.error("addChannel error:", err);
+      setAlertOpen(true);
+    }
+  };
 
-    // create listeners for each channel
-    channels.forEach((ch) => {
-      const channelId = ch.id;
+  // prepare delete: open confirm dialog
+  const confirmDeleteChannel = (channel) => {
+    setChannelToDelete(channel);
+    setDeleteConfirmOpen(true);
+  };
+  const cancelDelete = () => {
+    setChannelToDelete(null);
+    setDeleteConfirmOpen(false);
+  };
 
-      // listener for user's lastRead doc
-      const lastReadRef = doc(db, "users", user.uid, "channelReads", channelId);
-      const unsubLastRead = onSnapshot(lastReadRef, (snap) => {
-        // compute query for messages after lastRead (or all messages if none)
-        let msgsQuery;
-        if (snap.exists() && snap.data().lastRead) {
-          msgsQuery = query(collection(db, "channels", channelId, "messages"), where("createdAt", ">", snap.data().lastRead));
-        } else {
-          msgsQuery = query(collection(db, "channels", channelId, "messages"));
-        }
-
-        // if there's already a messages unsub for this channel, remove it before creating a new one
-        if (listenersRef.current[channelId] && listenersRef.current[channelId].unsubMsgs) {
-          try {
-            listenersRef.current[channelId].unsubMsgs();
-          } catch {}
-          listenersRef.current[channelId].unsubMsgs = null;
-        }
-
-        // listen to messages after lastRead and update unread count
-        const unsubMsgs = onSnapshot(msgsQuery, (snapMsgs) => {
-          const count = snapMsgs.size;
-          setChannels((prev) => prev.map((p) => (p.id === channelId ? { ...p, unread: count } : p)));
-        });
-
-        // store both unsub functions in the central map
-        listenersRef.current[channelId] = {
-          unsubLastRead,
-          unsubMsgs,
-        };
-      });
-
-      // store unsubLastRead early (unsubMsgs will be added inside snapshot callback)
-      listenersRef.current[channelId] = {
-        unsubLastRead,
-        unsubMsgs: listenersRef.current[channelId]?.unsubMsgs || null,
-      };
-    });
-
-    // cleanup when this effect runs next time
-    return () => {
-      Object.values(listenersRef.current).forEach((obj) => {
-        try {
-          obj.unsubLastRead && obj.unsubLastRead();
-        } catch {}
-        try {
-          obj.unsubMsgs && obj.unsubMsgs();
-        } catch {}
-      });
-      listenersRef.current = {};
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [channels.length, user]);
-
-  const handleClick = () => setOpen((p) => !p);
-
-  const manageCreateRoomModal = () => setShowCreateRoom((p) => !p);
-
-  const goToChannel = (id) => navigate(`/channel/${id}`);
+  // Delete channel: delete subcollection messages first (batched), then delete channel doc.
+  // NOTE: Firestore doesn't support server-side recursive delete in client SDK directly.
+  // We'll fetch messages (limited) and delete them in batches. For large collections consider Cloud Function or firebase-tools.
+  const deleteChannel = async () => {
+    if (!channelToDelete) return;
+    setDeleting(true);
+    try {
+      const messagesCol = collection(db, "channels", channelToDelete.id, "messages");
+      const msgsSnap = await getDocs(messagesCol);
+      // batched deletes (100 ops per batch recommended)
+      const batch = writeBatch(db);
+      msgsSnap.forEach((m) => batch.delete(doc(db, "channels", channelToDelete.id, "messages", m.id)));
+      // commit deletes of messages
+      await batch.commit();
+      // delete the channel doc itself
+      await deleteDoc(doc(db, "channels", channelToDelete.id));
+      // close dialog
+      setDeleteConfirmOpen(false);
+      setChannelToDelete(null);
+    } catch (err) {
+      console.error("deleteChannel error:", err);
+      // if fails, still close and inform user
+      setDeleteConfirmOpen(false);
+      setChannelToDelete(null);
+      setAlertOpen(true);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   return (
-    <Box sx={{ color: "#dcddde" }}>
-      {showCreateRoom && <CreateRoom create={() => {}} manage={manageCreateRoomModal} />}
+    <Box sx={{ color: "#f2f3f5", width: "100%" }}>
+      {/* Snackbar alert */}
+      <Snackbar
+        anchorOrigin={{ vertical: "top", horizontal: "center" }}
+        open={alertOpen}
+        onClose={closeAlert}
+        TransitionComponent={Fade}
+        message="Invalid or duplicate channel name"
+        action={
+          <IconButton size="small" aria-label="close" color="inherit" onClick={closeAlert}>
+            <CloseIcon fontSize="small" />
+          </IconButton>
+        }
+      />
 
-      {/* Server header */}
-      <Box sx={{ px: 2, py: 1.5, borderBottom: "1px solid #202225", backgroundColor: "#2f3136" }}>
+      {/* Create room modal */}
+      {showCreateRoom && <CreateRoom create={addChannel} manage={toggleCreateRoom} />}
+
+      {/* Header */}
+      <Box sx={{ px: 2, py: 1.25, backgroundColor: "#2b2d34", borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
         <Typography sx={{ fontWeight: 700 }}>Chatify Server</Typography>
-        <Typography variant="caption" sx={{ color: "#b9bbbe" }}>Channels</Typography>
+        <Typography variant="caption" sx={{ color: "#a1a1aa" }}>
+          Channels
+        </Typography>
       </Box>
 
-      {/* create channel row */}
+      {/* Create row */}
       <ListItem sx={{ paddingTop: 0.5, paddingBottom: 0.5 }}>
-        <ListItemText primary="Create New Channel" primaryTypographyProps={{ sx: { fontSize: 14, color: "#b9bbbe" } }} />
-        <IconButton edge="end" aria-label="add" onClick={manageCreateRoomModal}><AddIcon sx={{ color: "#5865f2" }} /></IconButton>
+        <ListItemText
+          primary="Create New Channel"
+          primaryTypographyProps={{ sx: { fontSize: 14, color: "#b9bbbe" } }}
+        />
+        <IconButton edge="end" aria-label="add" onClick={toggleCreateRoom}>
+          <AddIcon sx={{ color: "#7c7cff" }} />
+        </IconButton>
       </ListItem>
-      <Divider sx={{ borderColor: "#202225" }} />
+      <Divider sx={{ borderColor: "rgba(255,255,255,0.03)" }} />
 
-      <List component="nav" aria-labelledby="nested-list-subheader">
-        <ListItemButton onClick={handleClick}>
-          <ListItemIcon sx={{ minWidth: 32 }}>
-            <IoChatbubbles style={{ fontSize: "1.25em", color: "#5865f2" }} />
+      {/* Channels header */}
+      <List component="nav" aria-labelledby="channels-header">
+        <ListItemButton onClick={toggleGroup} sx={{ px: 2 }}>
+          <ListItemIcon sx={{ minWidth: 36 }}>
+            <IoChatbubbles style={{ fontSize: 18, color: "#7c7cff" }} />
           </ListItemIcon>
-          <ListItemText primary="TEXT CHANNELS" primaryTypographyProps={{ sx: { fontSize: 12, color: "#8e9297", fontWeight: 600 } }} />
-          {open ? <ExpandLess sx={{ color: "#8e9297" }} /> : <ExpandMore sx={{ color: "#8e9297" }} />}
+          <ListItemText
+            primary="TEXT CHANNELS"
+            primaryTypographyProps={{ sx: { fontSize: 12, color: "#a1a1aa", fontWeight: 600 } }}
+          />
+          {openGroup ? <ExpandLess sx={{ color: "#a1a1aa" }} /> : <ExpandMore sx={{ color: "#a1a1aa" }} />}
         </ListItemButton>
 
-        <Collapse in={open} timeout="auto">
-          <List component="div" disablePadding>
+        {/* list */}
+        {openGroup && (
+          <Box>
             {channels.map((channel) => {
               const isActive = channel.id === currentChannelId;
               return (
-                <ListItemButton
+                <Box
                   key={channel.id}
-                  sx={{ pl: 4, py: 0.8, borderRadius: 1, mx: 1, backgroundColor: isActive ? "#34363d" : "transparent", "&:hover": { backgroundColor: "#30323a" } }}
-                  onClick={() => goToChannel(channel.id)}
+                  sx={{
+                    display: "flex",
+                    alignItems: "center",
+                    px: 1,
+                    my: 0.5,
+                    // add a class-like selector to show delete button on hover:
+                    "&:hover .channel-delete": { opacity: 1 },
+                  }}
                 >
-                  <ListItemIcon sx={{ minWidth: 26 }}>
-                    <BiHash style={{ fontSize: "1.2em", color: isActive ? "#fff" : "#8e9297" }} />
-                  </ListItemIcon>
+                  <ListItemButton
+                    onClick={() => goToChannel(channel.id)}
+                    sx={{
+                      pl: 3.5,
+                      flex: 1,
+                      borderRadius: 1,
+                      mx: 1,
+                      py: 1,
+                      backgroundColor: isActive ? "rgba(124,124,255,0.12)" : "transparent",
+                      "&:hover": { backgroundColor: isActive ? "rgba(124,124,255,0.16)" : "rgba(255,255,255,0.02)" },
+                      cursor: "pointer",
+                    }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 28 }}>
+                      <BiHash style={{ fontSize: 16, color: isActive ? "#7c7cff" : "#8e9297" }} />
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={channel.channelName}
+                      primaryTypographyProps={{
+                        sx: {
+                          color: isActive ? "#f2f3f5" : "#d1d1d6",
+                          fontWeight: isActive ? 600 : 400,
+                          fontSize: 14,
+                        },
+                      }}
+                    />
+                  </ListItemButton>
 
-                  <ListItemText primary={channel.channelName} primaryTypographyProps={{ sx: { color: isActive ? "#f2f3f5" : "#a1a1aa", fontWeight: isActive ? 700 : 500 } }} />
-
-                  {channel.unread > 0 && <Badge color="error" badgeContent={channel.unread > 99 ? "99+" : channel.unread} sx={{ mr: 1 }} />}
-                </ListItemButton>
+                  {/* delete icon (hidden until hover) */}
+                  <Box
+                    className="channel-delete"
+                    sx={{
+                      opacity: 0,
+                      transition: "opacity 140ms",
+                      display: "flex",
+                      alignItems: "center",
+                      pr: 0.5,
+                    }}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <Tooltip title="Delete channel" placement="right">
+                      <IconButton
+                        size="small"
+                        onClick={() => confirmDeleteChannel(channel)}
+                        sx={{ color: "#ff6b6b" }}
+                        aria-label={`delete-${channel.channelName}`}
+                      >
+                        <DeleteOutlineIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </Box>
+                </Box>
               );
             })}
-          </List>
-        </Collapse>
+
+            {channels.length === 0 && (
+              <Box sx={{ px: 3.5, py: 1 }}>
+                <Typography variant="body2" sx={{ color: "#a1a1aa" }}>
+                  No channels yet — create one!
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        )}
       </List>
+
+      {/* Delete confirm dialog */}
+      <Dialog open={deleteConfirmOpen} onClose={cancelDelete}>
+        <DialogTitle>Delete channel?</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: "#666" }}>
+            Deleting <strong>{channelToDelete?.channelName}</strong> will remove the channel and its messages.
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelDelete} disabled={deleting}>Cancel</Button>
+          <Button onClick={deleteChannel} color="error" variant="contained" disabled={deleting}>
+            {deleting ? "Deleting..." : "Delete"}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 }

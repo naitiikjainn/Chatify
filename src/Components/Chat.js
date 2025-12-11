@@ -68,6 +68,7 @@ function Chat({ user }) {
   const messagesContainerRef = useRef(null);
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
+  const prevMessagesLenRef = useRef(0);
 
   // file selection + preview state
   const fileInputRef = useRef(null);
@@ -94,102 +95,116 @@ function Chat({ user }) {
   // messages hidden for this user (delete for me)
   const [hiddenMessagesSet, setHiddenMessagesSet] = useState(new Set());
 
+  // ---------------- fetch channel name ----------------
   useEffect(() => {
-    // fetch channel metadata (name)
     if (!channelId) {
       setChannelName("");
       return;
     }
+    let mounted = true;
     const fetchChannel = async () => {
-      const docRef = doc(db, "channels", channelId);
-      const snap = await getDoc(docRef);
-      if (snap.exists()) setChannelName(snap.data().channelName || "");
-      else setChannelName("");
+      try {
+        const docRef = doc(db, "channels", channelId);
+        const snap = await getDoc(docRef);
+        if (!mounted) return;
+        if (snap.exists()) setChannelName(snap.data().channelName || "");
+        else setChannelName("");
+      } catch (err) {
+        console.error("fetchChannel error:", err);
+      }
     };
     fetchChannel();
+    return () => {
+      mounted = false;
+    };
   }, [channelId]);
 
-  // messages listener
+  // ---------------- messages listener ----------------
   useEffect(() => {
     if (!channelId) {
       setMessages([]);
+      prevMessagesLenRef.current = 0;
       return;
     }
     const messagesRef = collection(db, "channels", channelId, "messages");
     const q = query(messagesRef, orderBy("createdAt"));
-    const unsub = onSnapshot(q, (snapshot) => {
-      setMessages(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })));
-    });
+    const unsub = onSnapshot(
+      q,
+      (snapshot) => {
+        const docs = snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+        setMessages(docs);
+
+        // compute how many new messages arrived
+        const prevLen = prevMessagesLenRef.current || 0;
+        const newLen = docs.length;
+        const delta = Math.max(0, newLen - prevLen);
+        prevMessagesLenRef.current = newLen;
+
+        // check scroll position immediately and decide scrolling / counter
+        const el = messagesContainerRef.current;
+        const threshold = 50; // px (tweakable)
+        const atBottomNow = el ? el.scrollHeight - (el.scrollTop + el.clientHeight) <= threshold : true;
+
+        if (atBottomNow) {
+          // auto-scroll if at bottom
+          setTimeout(() => messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }), 0);
+          setNewMessagesCount(0);
+          setIsAtBottom(true);
+        } else {
+          // increment by actual delta (fallback to +1)
+          setNewMessagesCount((c) => c + (delta || 1));
+        }
+      },
+      (err) => {
+        console.error("messages onSnapshot error", err);
+      }
+    );
+
     return () => unsub();
   }, [channelId]);
-// update user's lastRead whenever user reaches bottom of the message list
-useEffect(() => {
-  if (!channelId || !user) return;
-  if (!isAtBottom) return;
 
-  // set lastRead to serverTimestamp (so unread logic uses server time)
-  const updateLastRead = async () => {
-    try {
-      await setDoc(doc(db, "users", user.uid, "channelReads", channelId), { lastRead: serverTimestamp() }, { merge: true });
-    } catch (e) {
-      console.warn("updateLastRead failed:", e);
-    }
-  };
-
-  updateLastRead();
-}, [isAtBottom, channelId, user]);
-
-  // auto-scroll behavior: detect if user near bottom, and only auto-scroll when at bottom
+  // ---------------- robust scroll detection ----------------
   useEffect(() => {
     const el = messagesContainerRef.current;
     if (!el) return;
 
     const checkAtBottom = () => {
-      const threshold = 150; // px
+      const threshold = 50; // px
       const distanceFromBottom = el.scrollHeight - (el.scrollTop + el.clientHeight);
       const atBottom = distanceFromBottom <= threshold;
       setIsAtBottom(atBottom);
       if (atBottom) setNewMessagesCount(0);
     };
 
-    checkAtBottom();
+    // initial check after layout
+    setTimeout(checkAtBottom, 0);
+
     el.addEventListener("scroll", checkAtBottom, { passive: true });
     return () => el.removeEventListener("scroll", checkAtBottom);
   }, []);
 
-  // on messages change, scroll only if user was at bottom
+  // ensure we scroll when messages change and user is at bottom
   useEffect(() => {
     if (!messagesContainerRef.current) return;
     if (isAtBottom) {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
       setNewMessagesCount(0);
-    } else {
-      setNewMessagesCount((c) => c + 1);
     }
   }, [messages, isAtBottom]);
 
-  // mark channel read when user enters it; cleanup typing doc on leave
-  // mark channel read when user enters it; cleanup typing doc on leave
-useEffect(() => {
-  if (!channelId || !user) return;
-  const myReadRef = doc(db, "users", user.uid, "channelReads", channelId);
+  // ---------------- mark channel read on enter and cleanup typing on leave ----------------
+  useEffect(() => {
+    if (!channelId || !user) return;
+    const myReadRef = doc(db, "users", user.uid, "channelReads", channelId);
+    setDoc(myReadRef, { lastRead: serverTimestamp() }, { merge: true }).catch(() => {});
 
-  // mark read on open
-  (async () => {
-    try {
-      await setDoc(myReadRef, { lastRead: serverTimestamp() }, { merge: true });
-    } catch (e) {
-      console.warn("set lastRead failed on open:", e);
-    }
-  })();
+    // cleanup typing doc on leave
+    return () => {
+      deleteDoc(doc(db, "channels", channelId, "typing", user.uid)).catch(() => {});
+    };
+  }, [channelId, user]);
 
-  return () => {
-    // remove typing doc on leave (best-effort)
-    deleteDoc(doc(db, "channels", channelId, "typing", user.uid)).catch(() => {});
-  };
-}, [channelId, user]);
-
-  // typing listener
+  // ---------------- typing listener ----------------
   useEffect(() => {
     if (!channelId) {
       setTypingUsers([]);
@@ -211,7 +226,7 @@ useEffect(() => {
     return () => unsub();
   }, [channelId, user]);
 
-  // load user's deletedMessages to maintain hiddenMessagesSet
+  // ---------------- load user's deletedMessages ----------------
   useEffect(() => {
     if (!user) {
       setHiddenMessagesSet(new Set());
@@ -226,24 +241,26 @@ useEffect(() => {
     return () => unsub();
   }, [user]);
 
-  // send typing presence
+  // ---------------- send typing presence ----------------
   const sendTyping = async () => {
     if (!channelId || !user) return;
     const typingDoc = doc(db, "channels", channelId, "typing", user.uid);
     try {
       await setDoc(typingDoc, { name: user.displayName, lastSeen: serverTimestamp() }, { merge: true });
     } catch (err) {
-      // ignore
+      // ignore transient errors
     }
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     typingTimerRef.current = setTimeout(async () => {
       try {
         await deleteDoc(typingDoc);
-      } catch (e) {}
+      } catch (e) {
+        // ignore
+      }
     }, 5000);
   };
 
-  // send text message
+  // ---------------- send text message ----------------
   const sendMessage = async () => {
     if (!channelId || !text.trim() || !user) return;
     try {
@@ -254,7 +271,7 @@ useEffect(() => {
         photoURL: user.photoURL,
         createdAt: serverTimestamp(),
       });
-      // update lastRead for sender
+      // mark sender's lastRead
       await setDoc(doc(db, "users", user.uid, "channelReads", channelId), { lastRead: serverTimestamp() }, { merge: true });
       setText("");
     } catch (err) {
@@ -262,7 +279,7 @@ useEffect(() => {
     }
   };
 
-  // file picked -> preview (no upload yet)
+  // ---------------- file picked -> preview ----------------
   const onFilePicked = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -286,7 +303,7 @@ useEffect(() => {
     setPreviewOpen(false);
   };
 
-  // upload file and send message (stores storagePath)
+  // ---------------- upload file and send ----------------
   const uploadAndSend = async () => {
     if (!selectedFile || !channelId || !user) return;
     setUploading(true);
@@ -306,24 +323,28 @@ useEffect(() => {
           setUploading(false);
         },
         async () => {
-          const url = await getDownloadURL(task.snapshot.ref);
-          await addDoc(collection(db, "channels", channelId, "messages"), {
-            text: caption || "",
-            uid: user.uid,
-            name: user.displayName,
-            photoURL: user.photoURL,
-            createdAt: serverTimestamp(),
-            fileUrl: url,
-            fileName: selectedFile.name,
-            fileType: selectedFile.type,
-            fileSize: selectedFile.size,
-            storagePath: path, // important for delete-from-storage later
-          });
-          // update lastRead for sender
-          await setDoc(doc(db, "users", user.uid, "channelReads", channelId), { lastRead: serverTimestamp() }, { merge: true });
-          setUploading(false);
-          setUploadProgress(0);
-          cancelPreview();
+          try {
+            const url = await getDownloadURL(task.snapshot.ref);
+            await addDoc(collection(db, "channels", channelId, "messages"), {
+              text: caption || "",
+              uid: user.uid,
+              name: user.displayName,
+              photoURL: user.photoURL,
+              createdAt: serverTimestamp(),
+              fileUrl: url,
+              fileName: selectedFile.name,
+              fileType: selectedFile.type,
+              fileSize: selectedFile.size,
+              storagePath: path,
+            });
+            await setDoc(doc(db, "users", user.uid, "channelReads", channelId), { lastRead: serverTimestamp() }, { merge: true });
+          } catch (err) {
+            console.error("uploadAndSend finalization error:", err);
+          } finally {
+            setUploading(false);
+            setUploadProgress(0);
+            cancelPreview();
+          }
         }
       );
     } catch (err) {
@@ -403,15 +424,6 @@ useEffect(() => {
 
   const deleteForEveryone = async (message) => {
     if (!message || !message.id || !user) return;
-
-    // CLIENT-SIDE GUARD: only allow original sender (prevent accidental/malicious client calls)
-    if (message.uid !== user.uid) {
-      console.warn("Blocked deleteForEveryone on client — not message owner", { messageId: message.id, owner: message.uid, me: user.uid });
-      // close menu to avoid confusion
-      closeMenu();
-      return;
-    }
-
     const msgDocRef = doc(db, "channels", channelId, "messages", message.id);
 
     try {
@@ -432,7 +444,6 @@ useEffect(() => {
           const fileRef = storageRef(storage, message.storagePath);
           await deleteObject(fileRef);
         } catch (err) {
-          // warn but continue; file might not exist or permission denied
           console.warn("Storage delete failed (non-fatal):", err.message || err);
         }
       }
@@ -465,7 +476,14 @@ useEffect(() => {
     return (
       <>
         {msg.text ? (
-          <Typography variant="body2" sx={{ color: isOwn ? "#012b0f" : "#eaeaea", mt: msg.fileUrl ? 0.5 : 0, px: msg.fileUrl ? 1 : 0 }}>
+          <Typography
+            variant="body2"
+            sx={{
+              color: isOwn ? "#012b0f" : "#eaeaea",
+              mt: msg.fileUrl ? 0.5 : 0,
+              px: msg.fileUrl ? 1 : 0,
+            }}
+          >
             {msg.text}
           </Typography>
         ) : null}
@@ -473,7 +491,12 @@ useEffect(() => {
         {/* Images */}
         {msg.fileUrl && msg.fileType && msg.fileType.startsWith("image/") && (
           <Box sx={{ mt: 1, position: "relative", borderRadius: 2, overflow: "hidden", boxShadow: "0 1px 6px rgba(0,0,0,0.4)" }}>
-            <img src={msg.fileUrl} alt={msg.fileName || "image"} style={{ display: "block", width: "100%", height: "auto", maxWidth: 420, cursor: "pointer" }} onClick={() => window.open(msg.fileUrl, "_blank")} />
+            <img
+              src={msg.fileUrl}
+              alt={msg.fileName || "image"}
+              style={{ display: "block", width: "100%", height: "auto", maxWidth: 420, cursor: "pointer" }}
+              onClick={() => window.open(msg.fileUrl, "_blank")}
+            />
             {msg.fileName && <Typography variant="caption" sx={{ color: "#a1a1aa", mt: 0.5, px: 1 }}>{msg.fileName}</Typography>}
           </Box>
         )}
@@ -523,10 +546,9 @@ useEffect(() => {
           const isOwn = msg.uid === user?.uid;
           const bubbleColor = isOwn ? "#25D366" : "#3a3f46";
           const textColor = isOwn ? "#012b0f" : "#eaeaea";
-          const userReaction = getUserReaction(msg);
 
           return (
-            <Box key={msg.id} sx={{ display: "flex", gap: 1, mb: 1.5, flexDirection: isOwn ? "row-reverse" : "row", alignItems: "flex-end" }}>
+            <Box key={msg.id} sx={{ display: "flex", gap: 1, mb: 1.5, flexDirection: isOwn ? "row-reverse" : "row", alignItems: "flex-end", position: "relative" }}>
               <Avatar src={msg.photoURL} sx={{ width: 36, height: 36 }} />
 
               <Box sx={{ maxWidth: "72%", display: "flex", flexDirection: "column", alignItems: isOwn ? "flex-end" : "flex-start" }}>
@@ -535,7 +557,6 @@ useEffect(() => {
 
                   {/* content or deleted placeholder */}
                   {renderMessageContent(msg, isOwn)}
-
                 </Box>
 
                 {/* actions row: reactions + menu */}
@@ -589,7 +610,6 @@ useEffect(() => {
                 <Box
                   sx={{
                     position: "absolute",
-                    // attempt to place picker near the message: simple approach using last child position
                     right: isOwn ? 120 : "auto",
                     left: isOwn ? "auto" : 80,
                     transform: "translateY(-10px)",
@@ -641,24 +661,34 @@ useEffect(() => {
 
         {/* New messages floating button */}
         {newMessagesCount > 0 && !isAtBottom && (
-          <Button
-            variant="contained"
-            onClick={() => {
-              messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-              setNewMessagesCount(0);
-            }}
-            sx={{
-              position: "absolute",
-              right: 16,
-              bottom: 16,
-              backgroundColor: "#7c7cff",
-              textTransform: "none",
-              boxShadow: "0 6px 18px rgba(0,0,0,0.4)",
-            }}
-          >
-            {newMessagesCount > 1 ? `${newMessagesCount} new` : "New message"}
-          </Button>
-        )}
+  <Button
+    variant="contained"
+    onClick={() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      setNewMessagesCount(0);
+    }}
+    sx={{
+      position: "fixed",
+      right: 24,
+      // place above your input area — adjust 88 if your input's height/padding differ
+      bottom: { xs: 96, sm: 88 },
+      backgroundColor: "#7c7cff",
+      color: "#fff",
+      textTransform: "none",
+      boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+      zIndex: 1400,
+      minWidth: 110,
+      borderRadius: 20,
+      py: 1,
+      px: 2,
+      fontWeight: 600,
+      // subtle appear animation
+      transition: "transform 200ms ease, opacity 200ms ease",
+    }}
+  >
+    {newMessagesCount > 1 ? `${newMessagesCount} new` : "New message"}
+  </Button>
+)}
       </Box>
 
       {/* Typing indicator */}
@@ -755,12 +785,7 @@ useEffect(() => {
       {/* Message menu (Delete for me / for everyone) */}
       <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={closeMenu} anchorOrigin={{ vertical: "top", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
         <MenuItem onClick={() => { if (menuMessage) deleteForMe(menuMessage.id); }}>Delete for me</MenuItem>
-        <MenuItem
-          onClick={() => { if (menuMessage) deleteForEveryone(menuMessage); }}
-          disabled={!menuMessage || !user || menuMessage.uid !== user.uid}
-        >
-          Delete for everyone
-        </MenuItem>
+        <MenuItem onClick={() => { if (menuMessage) deleteForEveryone(menuMessage); }}>Delete for everyone</MenuItem>
       </Menu>
     </Box>
   );
