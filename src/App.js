@@ -126,7 +126,7 @@ function App() {
             overflowY: "auto",
           }}
         >
-          <Rooms />
+          <Rooms user={user} />
         </Box>
 
         {/* Chat area */}
