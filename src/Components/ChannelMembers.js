@@ -6,7 +6,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import PersonRemoveIcon from '@mui/icons-material/PersonRemove';
 import CircleIcon from '@mui/icons-material/Circle';
-import { collection, query, where, onSnapshot, doc, updateDoc, arrayRemove, getDocs } from 'firebase/firestore';
+import { collection, onSnapshot, doc, updateDoc } from 'firebase/firestore';
 import { db } from '../Firebase/Firebase';
 
 const ChannelMembers = ({ open, onClose, channelId, currentUser, channelOwnerUid }) => {

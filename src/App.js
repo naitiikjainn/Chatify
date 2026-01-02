@@ -1,13 +1,11 @@
 import React from "react";
-import { ThemeProvider, CssBaseline } from "@mui/material";
-import { theme } from "./theme"; // Note: changed from named export if using default in theme.js, check theme.js
+import { ThemeProvider, CssBaseline, Box, Typography, Button } from "@mui/material";
+import theme from "./theme";
 import { Routes, Route } from "react-router-dom";
 import { AuthProvider, useAuth } from "./Context/AuthContext";
 import MainLayout from "./Components/Layout/MainLayout";
 import Chat from "./Components/Chat/Chat";
 import ExploreChannels from "./Components/ExploreChannels";
-import { Box, Typography, Button } from "@mui/material";
-import themeDefault from "./theme"; // I used 'export default' in my previous tool call for theme.js
 
 function LoginScreen() {
   const { login } = useAuth();
@@ -28,9 +26,8 @@ function LoginScreen() {
         letterSpacing: 2,
         background: 'linear-gradient(45deg, #00f2ea, #ff0055)',
         backgroundClip: 'text',
-        textFillColor: 'transparent',
-        // Webkit prefix needed for some browsers in practice, adding just in case
         WebkitBackgroundClip: 'text',
+        textFillColor: 'transparent',
         WebkitTextFillColor: 'transparent'
       }}>
         CHATIFY
@@ -66,7 +63,6 @@ function AppContent() {
       <Route path="/" element={<MainLayout />}>
         <Route index element={<Chat />} />
         <Route path="channel/:channelId" element={<Chat />} />
-        {/* Note: ExploreChannels logic might need tweaks to fit new layout effectively, but keeping it simple for now */}
         <Route path="explore" element={<ExploreChannels />} />
       </Route>
     </Routes>
@@ -74,9 +70,8 @@ function AppContent() {
 }
 
 function App() {
-  // themeDefault because I exported it as default
   return (
-    <ThemeProvider theme={themeDefault}>
+    <ThemeProvider theme={theme}>
       <CssBaseline />
       <AuthProvider>
         <AppContent />

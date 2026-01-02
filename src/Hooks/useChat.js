@@ -1,19 +1,15 @@
+
 import { useState, useEffect, useRef } from "react";
 import {
-    collection,
-    query,
-    orderBy,
-    limit,
-    onSnapshot,
     addDoc,
-    serverTimestamp,
+    collection,
     doc,
-    setDoc,
-    deleteDoc,
-    updateDoc,
-    startAfter,
-    getDocs,
-    runTransaction
+    onSnapshot,
+    orderBy,
+    query,
+    runTransaction,
+    serverTimestamp,
+    setDoc
 } from "firebase/firestore";
 import { db } from "../Firebase/Firebase";
 import { useAuth } from "../Context/AuthContext";
@@ -25,7 +21,6 @@ export function useChat(channelId) {
     const [typingUsers, setTypingUsers] = useState([]);
 
     // Pagination
-    const [hasMore, setHasMore] = useState(true);
     const visibleLimit = useRef(50);
 
     // Listen for messages
@@ -43,7 +38,6 @@ export function useChat(channelId) {
         // If we want real infinite scroll up, we need `endBefore` or `limitToLast`.
         // `limitToLast(50)` is best for chat.
 
-        const q = query(messagesRef, orderBy("createdAt", "asc"));
         // Firestore `limitToLast` requires matching order. 
         // Actually, `orderBy('createdAt')` + `limitToLast(50)` works if we want the LATEST 50.
 
@@ -163,7 +157,7 @@ export function useChat(channelId) {
 
         // We use a transaction or simple update. For simplicity in this structure:
         // We need to know the current state.
-        // Firestore `arrayUnion` and `arrayRemove` are great if the structure is `{ reactions: { "❤️": [uid, uid] } }`
+        // Firestore `arrayUnion` and `arrayRemove` are great if the structure is `{ reactions: { "❤️": [uid, uid] } } `
         // But working with maps in Firestore can be tricky with dot notation for dynamic keys without knowing the full map.
         // Let's read first then update to be safe and logical.
 

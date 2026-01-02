@@ -1,6 +1,6 @@
 
 import React, { useState } from 'react';
-import { Box, Typography, Avatar, IconButton, Menu, MenuItem, Zoom, Tooltip } from '@mui/material';
+import { Box, Typography, Avatar, IconButton, Menu, MenuItem, Zoom } from '@mui/material';
 
 import MoreVertIcon from '@mui/icons-material/MoreVert';
 import AddReactionIcon from '@mui/icons-material/AddReaction';

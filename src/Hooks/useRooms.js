@@ -4,14 +4,12 @@ import {
     collection,
     doc,
     onSnapshot,
-    orderBy,
-    query,
     setDoc
 } from "firebase/firestore";
 import { db } from "../Firebase/Firebase";
 import { useAuth } from "../Context/AuthContext";
 
-export function useRooms() {
+export const useRooms = () => {
     const { currentUser } = useAuth();
     const [joinedRooms, setJoinedRooms] = useState([]);
     const [allRooms, setAllRooms] = useState([]);
@@ -33,13 +31,11 @@ export function useRooms() {
             return;
         }
 
+        // Real-time listener for joined channels
         const joinedRef = collection(db, "users", currentUser.uid, "joinedChannels");
-        const unsub = onSnapshot(joinedRef, (snap) => {
-            const joinedIds = snap.docs.map((d) => d.id);
-            // We will derive the full room objects from allRooms
-            // This might have a slight delay if allRooms updates later, but usually fine
-            // Better: we just store IDs here and filter in the render or effect
-            // Actually, let's just return the IDs or filter the list here
+        const unsub = onSnapshot(joinedRef, () => {
+            // The actual data mapping happens in the effect below using 'allRooms'
+            // We just listen here to trigger updates (or we could merge logic)
             setLoading(false);
         });
 

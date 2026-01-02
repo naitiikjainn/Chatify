@@ -1,7 +1,8 @@
+
 import React, { useState } from 'react';
 import {
     Dialog, DialogTitle, DialogContent, DialogActions,
-    Button, TextField, Box, Avatar, Typography
+    Button, TextField, Box, Avatar
 } from '@mui/material';
 import { updateProfile } from "firebase/auth";
 import { doc, updateDoc } from "firebase/firestore";

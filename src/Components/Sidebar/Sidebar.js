@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import {
-    Drawer, Box, Typography, Button, List, ListItem,
-    ListItemText, ListItemButton, Divider, Fab, Dialog,
+    Box, Typography, Button, List, ListItem,
+    ListItemText, Dialog,
     DialogTitle, DialogContent, DialogActions, TextField,
-    IconButton, ListItemIcon
+    IconButton, ListItemIcon, Drawer
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -15,7 +15,7 @@ import { useAuth } from '../../Context/AuthContext';
 import { useRooms } from '../../Hooks/useRooms';
 import ProfileSettings from '../ProfileSettings';
 
-const drawerWidth = 260;
+
 
 const Sidebar = () => {
     const { joinedRooms, createRoom } = useRooms();
