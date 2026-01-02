@@ -21,7 +21,7 @@ export function useChat(channelId) {
     const [typingUsers, setTypingUsers] = useState([]);
 
     // Pagination
-    const visibleLimit = useRef(50);
+
 
     // Listen for messages
     useEffect(() => {

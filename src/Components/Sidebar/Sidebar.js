@@ -3,7 +3,7 @@ import {
     Box, Typography, Button, List, ListItem,
     ListItemText, Dialog,
     DialogTitle, DialogContent, DialogActions, TextField,
-    IconButton, ListItemIcon, Drawer
+    IconButton, ListItemIcon
 } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import LogoutIcon from '@mui/icons-material/Logout';
