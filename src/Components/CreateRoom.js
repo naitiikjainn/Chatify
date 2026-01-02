@@ -1,3 +1,4 @@
+// src/Components/CreateRoom.js
 import React, { useState } from "react";
 import {
   Dialog,
@@ -13,9 +14,16 @@ import {
 function CreateRoom({ create, manage }) {
   const [value, setValue] = useState("");
 
+  const normalize = (str) =>
+    str
+      .toLowerCase()
+      .replace(/\s+/g, "-")
+      .replace(/[^a-z0-9\-]/g, "");
+
   const handleCreate = () => {
-    if (!value.trim()) return;
-    create(value);
+    const cleaned = normalize(value);
+    if (!cleaned) return;
+    create(cleaned);
     setValue("");
     manage();
   };
@@ -34,17 +42,15 @@ function CreateRoom({ create, manage }) {
         },
       }}
     >
-      {/* Title */}
       <DialogTitle sx={{ pb: 1 }}>
         <Typography sx={{ fontWeight: 700, fontSize: 18 }}>
           Create Text Channel
         </Typography>
         <Typography variant="caption" sx={{ color: "#b9bbbe" }}>
-          Channels are where your team communicates.
+          Channels organize conversations by topic.
         </Typography>
       </DialogTitle>
 
-      {/* Content */}
       <DialogContent>
         <Box sx={{ mt: 1 }}>
           <Typography
@@ -79,22 +85,19 @@ function CreateRoom({ create, manage }) {
             variant="caption"
             sx={{ color: "#8e9297", mt: 1, display: "block" }}
           >
-            Lowercase, no spaces. Use dashes instead.
+            Automatically converted to lowercase-with-dashes.
           </Typography>
         </Box>
       </DialogContent>
 
-      {/* Actions */}
       <DialogActions sx={{ p: 2 }}>
         <Button
           onClick={manage}
-          sx={{
-            color: "#b9bbbe",
-            "&:hover": { backgroundColor: "#3c3f45" },
-          }}
+          sx={{ color: "#b9bbbe", "&:hover": { backgroundColor: "#3c3f45" } }}
         >
           Cancel
         </Button>
+
         <Button
           variant="contained"
           onClick={handleCreate}
