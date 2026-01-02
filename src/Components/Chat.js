@@ -1,5 +1,7 @@
 // src/Components/Chat.js
 import React, { useEffect, useState, useRef } from "react";
+import { useNavigate } from "react-router-dom";
+
 import { useParams } from "react-router-dom";
 import {
   collection,
@@ -13,6 +15,7 @@ import {
   setDoc,
   deleteDoc,
   runTransaction,
+  updateDoc,
 } from "firebase/firestore";
 import { db } from "../Firebase/Firebase";
 import {
@@ -69,6 +72,7 @@ function Chat({ user }) {
   const [isAtBottom, setIsAtBottom] = useState(true);
   const [newMessagesCount, setNewMessagesCount] = useState(0);
   const prevMessagesLenRef = useRef(0);
+  const navigate = useNavigate();
 
   // file selection + preview state
   const fileInputRef = useRef(null);
@@ -95,6 +99,7 @@ function Chat({ user }) {
   // messages hidden for this user (delete for me)
   const [hiddenMessagesSet, setHiddenMessagesSet] = useState(new Set());
 
+  
   // ---------------- fetch channel name ----------------
   useEffect(() => {
     if (!channelId) {
@@ -182,6 +187,19 @@ function Chat({ user }) {
     el.addEventListener("scroll", checkAtBottom, { passive: true });
     return () => el.removeEventListener("scroll", checkAtBottom);
   }, []);
+useEffect(() => {
+  if (!channelId) return;
+
+  const ref = doc(db, "channels", channelId);
+  const unsub = onSnapshot(ref, (snap) => {
+    if (!snap.exists()) {
+      // Channel deleted → redirect to default
+      navigate("/");
+    }
+  });
+
+  return () => unsub();
+}, [channelId]);
 
   // ensure we scroll when messages change and user is at bottom
   useEffect(() => {
@@ -422,12 +440,24 @@ function Chat({ user }) {
     }
   };
 
+  // IMPORTANT: client-side guard + safe update
   const deleteForEveryone = async (message) => {
     if (!message || !message.id || !user) return;
+
+    // Client-side guard: allow only author OR admin
+    // NOTE: server rules MUST enforce this — client checks are only UX improvements.
+    const isAuthor = message.uid === user.uid;
+    const isAdmin = !!user.isAdmin; // adjust if you store admin differently (e.g. user.customClaims.admin)
+    if (!isAuthor && !isAdmin) {
+      console.warn("deleteForEveryone blocked on client: not author or admin");
+      closeMenu();
+      return;
+    }
+
     const msgDocRef = doc(db, "channels", channelId, "messages", message.id);
 
     try {
-      // mark message deleted
+      // Use a merge so we don't replace unrelated fields accidentally
       await setDoc(
         msgDocRef,
         {
@@ -438,12 +468,13 @@ function Chat({ user }) {
         { merge: true }
       );
 
-      // attempt to delete storage object if storagePath exists
+      // attempt to delete storage object if storagePath exists (best-effort)
       if (message.storagePath) {
         try {
           const fileRef = storageRef(storage, message.storagePath);
           await deleteObject(fileRef);
         } catch (err) {
+          // warn but continue; file might not exist or permission denied
           console.warn("Storage delete failed (non-fatal):", err.message || err);
         }
       }
@@ -661,34 +692,32 @@ function Chat({ user }) {
 
         {/* New messages floating button */}
         {newMessagesCount > 0 && !isAtBottom && (
-  <Button
-    variant="contained"
-    onClick={() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-      setNewMessagesCount(0);
-    }}
-    sx={{
-      position: "fixed",
-      right: 24,
-      // place above your input area — adjust 88 if your input's height/padding differ
-      bottom: { xs: 96, sm: 88 },
-      backgroundColor: "#7c7cff",
-      color: "#fff",
-      textTransform: "none",
-      boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
-      zIndex: 1400,
-      minWidth: 110,
-      borderRadius: 20,
-      py: 1,
-      px: 2,
-      fontWeight: 600,
-      // subtle appear animation
-      transition: "transform 200ms ease, opacity 200ms ease",
-    }}
-  >
-    {newMessagesCount > 1 ? `${newMessagesCount} new` : "New message"}
-  </Button>
-)}
+          <Button
+            variant="contained"
+            onClick={() => {
+              messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+              setNewMessagesCount(0);
+            }}
+            sx={{
+              position: "fixed",
+              right: 24,
+              bottom: { xs: 96, sm: 88 },
+              backgroundColor: "#7c7cff",
+              color: "#fff",
+              textTransform: "none",
+              boxShadow: "0 8px 26px rgba(0,0,0,0.45)",
+              zIndex: 1400,
+              minWidth: 110,
+              borderRadius: 20,
+              py: 1,
+              px: 2,
+              fontWeight: 600,
+              transition: "transform 200ms ease, opacity 200ms ease",
+            }}
+          >
+            {newMessagesCount > 1 ? `${newMessagesCount} new` : "New message"}
+          </Button>
+        )}
       </Box>
 
       {/* Typing indicator */}
@@ -782,10 +811,14 @@ function Chat({ user }) {
         </DialogActions>
       </Dialog>
 
-      {/* Message menu (Delete for me / for everyone) */}
+      {/* Message menu (Delete for me / Delete for everyone) */}
       <Menu anchorEl={menuAnchorEl} open={Boolean(menuAnchorEl)} onClose={closeMenu} anchorOrigin={{ vertical: "top", horizontal: "right" }} transformOrigin={{ vertical: "top", horizontal: "right" }}>
         <MenuItem onClick={() => { if (menuMessage) deleteForMe(menuMessage.id); }}>Delete for me</MenuItem>
-        <MenuItem onClick={() => { if (menuMessage) deleteForEveryone(menuMessage); }}>Delete for everyone</MenuItem>
+
+        {/* show Delete for everyone only if current user is author or admin */}
+        {menuMessage && (menuMessage.uid === user?.uid || !!user?.isAdmin) ? (
+          <MenuItem onClick={() => { if (menuMessage) deleteForEveryone(menuMessage); }}>Delete for everyone</MenuItem>
+        ) : null}
       </Menu>
     </Box>
   );
